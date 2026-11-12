@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Аудитор встреч</title>
+  <link rel="stylesheet" href="/static/style.css?v=3">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#">Аудитор встреч</a>
+  <div class="status" id="cfg"></div>
+</header>
+
+<main class="layout">
+  <!-- Новая встреча -->
+  <section class="card" id="view-new">
+    <h1>Новая встреча</h1>
+    <p class="muted">Запишите разговор или загрузите готовую запись. После остановки запись автоматически
+      расшифруется, а ИИ разберёт встречу по регламенту отдела продаж.</p>
+
+    <div class="recorder" id="recorder">
+      <button class="rec-btn" id="btn-rec" type="button" aria-label="Начать запись">
+        <span class="rec-dot"></span>
+      </button>
+      <div class="rec-info">
+        <div class="rec-title" id="rec-title">Начать запись</div>
+        <div class="rec-sub muted" id="rec-sub">Используется микрофон этого устройства</div>
+        <div class="meter" id="meter" hidden><div id="meter-bar"></div></div>
+      </div>
+      <div class="rec-actions" id="rec-actions" hidden>
+        <button class="btn primary" id="btn-stop" type="button">Остановить и проанализировать</button>
+        <button class="btn ghost" id="btn-cancel" type="button">Отменить</button>
+      </div>
+    </div>
+
+    <div class="or"><span>или</span></div>
+
+    <label class="drop" id="drop">
+      <input type="file" id="file-input" accept="audio/*,video/*,.m4a,.mp3,.wav,.ogg,.webm" multiple hidden>
+      <strong>Перетащите аудиофайлы сюда</strong>
+      <span class="muted">или нажмите, чтобы выбрать. Можно несколько файлов.</span>
+    </label>
+    <ul class="file-list" id="file-list"></ul>
+    <fieldset class="mode" id="mode" hidden>
+      <label><input type="radio" name="mode" value="separate" checked> Отдельные встречи — каждый файл анализируется сам по себе</label>
+      <label><input type="radio" name="mode" value="joined"> Части одной встречи — склеить по порядку имён</label>
+    </fieldset>
+
+    <details class="meta">
+      <summary>Данные встречи <span class="muted">— необязательно, улучшают точность анализа</span></summary>
+      <div class="grid">
+        <label>Менеджер<input name="manager_name" placeholder="Имя менеджера"></label>
+        <label>ID менеджера<input name="manager_id"></label>
+        <label>Дата встречи<input name="meeting_date" type="date"></label>
+        <label>ID встречи / сделки<input name="meeting_id"></label>
+      </div>
+      <label>Коммерческие условия компании
+        <textarea name="company_rules" rows="2" placeholder="Действующие акции, скидки по распродаже, условия рассрочки, возврат предоплаты"></textarea></label>
+      <label>Данные о сделке из CRM<textarea name="crm_data" rows="2"></textarea></label>
+      <label>История предыдущих контактов<textarea name="client_history" rows="2"></textarea></label>
+      <label>Сведения о продукции и технических требованиях<textarea name="product_knowledge" rows="2"></textarea></label>
+    </details>
+
+    <button class="btn primary wide" id="btn-upload" type="button" disabled>Анализировать файлы</button>
+    <div class="error" id="new-error" hidden></div>
+  </section>
+
+  <!-- Результат -->
+  <section class="card" id="view-job" hidden>
+    <div class="job-head">
+      <div>
+        <a href="#" class="back">← Новая встреча</a>
+        <h1 id="job-title">Встреча</h1>
+        <div class="muted" id="job-sub"></div>
+      </div>
+      <div class="score" id="score" hidden><span id="score-val">—</span><small>/100</small></div>
+    </div>
+
+    <ol class="steps" id="steps">
+      <li data-s="upload">Загрузка</li>
+      <li data-s="transcribing">Расшифровка</li>
+      <li data-s="analyzing">Анализ</li>
+      <li data-s="done">Готово</li>
+    </ol>
+    <div class="detail muted" id="job-detail"></div>
+    <div class="error" id="job-error" hidden></div>
+    <div class="warn" id="job-warn" hidden></div>
+
+    <div class="metrics" id="metrics" hidden>
+      <h2>Метрики разговора <span class="muted">— посчитаны по таймкодам, без ИИ</span></h2>
+      <table><thead><tr><th>Спикер</th><th>Доля речи</th><th>Реплик</th><th>Вопросов</th><th>Самый длинный монолог</th></tr></thead>
+        <tbody id="metrics-body"></tbody></table>
+    </div>
+
+    <div class="tabs" id="tabs" hidden>
+      <button class="tab active" data-tab="report" type="button">Отчёт</button>
+      <button class="tab" data-tab="texts" type="button">Готовые тексты</button>
+      <button class="tab" data-tab="transcript" type="button">Расшифровка</button>
+      <div class="tab-actions">
+        <a class="btn ghost small" id="dl-report">Скачать .md</a>
+        <a class="btn ghost small" id="dl-transcript">Расшифровка .txt</a>
+        <button class="btn ghost small" id="btn-reanalyze" type="button">Повторить анализ</button>
+      </div>
+    </div>
+    <article class="pane report" id="pane-report"></article>
+    <div class="pane texts" id="pane-texts" hidden>
+      <p class="muted">Тексты из отчёта, очищенные от следов генерации: можно копировать и отправлять без правки.</p>
+      <section class="text-block">
+        <div class="text-head"><h3>Сообщение клиенту</h3><button class="btn primary small" data-copy="client_message" type="button">Скопировать</button></div>
+        <div class="text-body" data-text="client_message"></div>
+      </section>
+      <section class="text-block">
+        <div class="text-head"><h3>Скрипт следующего звонка</h3><button class="btn ghost small" data-copy="call_script" type="button">Скопировать</button></div>
+        <div class="text-body" data-text="call_script"></div>
+      </section>
+      <section class="text-block">
+        <div class="text-head"><h3>Резюме для CRM</h3><button class="btn ghost small" data-copy="crm_summary" type="button">Скопировать</button></div>
+        <div class="text-body" data-text="crm_summary"></div>
+      </section>
+    </div>
+    <pre class="pane transcript" id="pane-transcript" hidden></pre>
+  </section>
+
+  <aside class="card history">
+    <h2>История</h2>
+    <ul id="history"><li class="muted">Пока пусто</li></ul>
+  </aside>
+</main>
+
+<script src="/static/app.js?v=3"></script>
+</body>
+</html>

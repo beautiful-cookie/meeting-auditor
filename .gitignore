@@ -1,0 +1,10 @@
+.env
+# Промпт заказчика — не публикуется (см. prompts/example_prompt.md)
+prompts/royal_brick_auditor.md
+.venv/
+__pycache__/
+data/
+*.m4a
+*.mp3
+*.wav
+*.webm
