@@ -9,13 +9,26 @@ STAGE_MAX = {1: 8, 2: 20, 3: 5, 4: 15, 5: 10, 6: 10, 7: 15, 8: 10, 9: 7}
 NUM = r"(\d+(?:[.,]\d+)?)"
 
 
+def name_heard(name: str, transcript: str) -> bool:
+    """Звучало ли имя в разговоре (с учётом падежа и ё/е): «Алёна» найдёт «Алену», но «Лиля» не найдёт «утеплили»."""
+    norm = lambda s: s.lower().replace("ё", "е")  # noqa: E731
+    stem = re.escape(norm(name)[:-1] if len(name) > 3 else norm(name))
+    return re.search(rf"\b{stem}[а-я]{{0,3}}\b", norm(transcript)) is not None
+
+
 def _num(s: str) -> float:
     return float(s.replace(",", "."))
 
 
-def check(report: str) -> list[str]:
+def check(report: str, transcript: str = "") -> list[str]:
     issues: list[str] = []
     scores: dict[int, float] = {}
+
+    # Имя менеджера в карточке встречи, которого нет в записи, — выдумка модели
+    m = re.search(r"Менеджер\W{0,6}\s*([А-ЯЁ][а-яё]{2,})", report)
+    if transcript and m and m.group(1) not in ("Не", "Нет", "Неизвестно", "Имя"):
+        if not name_heard(m.group(1), transcript):
+            issues.append(f"В карточке встречи менеджер назван «{m.group(1)}», но этого имени нет в записи.")
 
     for line in report.splitlines():
         cells = [c.strip(" *") for c in line.strip().strip("|").split("|")]

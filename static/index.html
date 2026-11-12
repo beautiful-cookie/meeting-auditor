@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Аудитор встреч</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=4">
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
@@ -121,7 +121,17 @@
         <div class="text-body" data-text="crm_summary"></div>
       </section>
     </div>
-    <pre class="pane transcript" id="pane-transcript" hidden></pre>
+    <div class="pane transcript" id="pane-transcript" hidden></div>
+
+    <div class="player" id="player" hidden>
+      <button class="play" id="btn-play" type="button" aria-label="Воспроизвести">▶</button>
+      <div class="player-main">
+        <input type="range" id="seek" min="0" max="100" step="0.1" value="0" aria-label="Позиция">
+        <div class="player-meta"><span id="time">00:00</span><span class="muted" id="now-speaker"></span><span class="muted" id="dur"></span></div>
+      </div>
+      <button class="btn ghost small" id="btn-rate" type="button">1×</button>
+      <audio id="audio" preload="metadata"></audio>
+    </div>
   </section>
 
   <aside class="card history">
@@ -130,6 +140,6 @@
   </aside>
 </main>
 
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

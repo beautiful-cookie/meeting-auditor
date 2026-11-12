@@ -195,6 +195,7 @@ function openJobView(id) {
   ["#score", "#metrics", "#tabs"].forEach((s) => ($(s).hidden = true));
   showError($("#job-error"), ""); showError($("#job-warn"), "");
   $("#pane-report").innerHTML = ""; $("#pane-transcript").textContent = "";
+  transcriptSig = ""; player.audio.pause(); player.sig = ""; $("#player").hidden = true;
   document.querySelectorAll("[data-text]").forEach((el) => (el.textContent = ""));
   switchTab("report");
 }
@@ -211,6 +212,138 @@ function extractScore(md) {
   const m = md.match(/Итог[^0-9\n]{0,25}(\d{1,3}(?:[.,]\d+)?)\s*\/\s*100/i);
   return m ? m[1].replace(",", ".") : null;
 }
+
+/* ---------- Расшифровка по репликам и плеер ---------- */
+const toSec = (ts) => ts.split(":").reduce((acc, x) => acc * 60 + Number(x), 0);
+
+function speakerKey(u, nParts) { return nParts > 1 ? `${u.part}:${u.speaker}` : u.speaker; }
+function speakerLabel(j, u) {
+  const n = j.files.length, roles = (j.roles && j.roles.roles) || {};
+  return roles[speakerKey(u, n)] || (n > 1 ? `Спикер ${u.speaker} (ч. ${u.part})` : `Спикер ${u.speaker}`);
+}
+
+let transcriptSig = "";
+function renderTranscript(j) {
+  const utts = j.utterances || [];
+  const sig = j.id + utts.length + JSON.stringify(j.roles || {});
+  if (sig === transcriptSig) return;
+  transcriptSig = sig;
+  const pane = $("#pane-transcript");
+  if (!utts.length) { pane.textContent = j.transcript || ""; return; }
+  // Цвет закрепляется за ролью: первый по объёму речи участник (обычно менеджер) — акцентный
+  const order = (j.metrics || []).map((m) => m.speaker);
+  const colorOf = (label) => { const i = order.indexOf(label); return `role-${i < 0 ? 3 : Math.min(i, 3)}`; };
+  let html = "", part = null;
+  for (const [i, u] of utts.entries()) {
+    if (j.files.length > 1 && u.part !== part) {
+      part = u.part;
+      html += `<div class="part-sep">Часть ${part} · ${esc(j.files[part - 1].replace(/^\d+_/, ""))}</div>`;
+    }
+    const label = speakerLabel(j, u);
+    html += `<div class="utt ${colorOf(label)}" data-i="${i}" data-start="${u.start}">
+      <button class="ts" type="button" data-t="${u.start}">${fmtClock(u.start)}</button>
+      <span class="who">${esc(label)}</span><p>${esc(u.text)}</p></div>`;
+  }
+  pane.innerHTML = html;
+}
+
+// [00:12:40] и 00:12:40 в отчёте → кнопки, которые включают запись с этого места
+function linkifyTimestamps(root) {
+  const re = /\[?(\d{1,2}:\d{2}:\d{2})\]?|\[(\d{1,2}:\d{2})\]/g;
+  const has = new RegExp(re.source);  // без флага g: test() не помнит lastIndex между узлами
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) if (has.test(walker.currentNode.nodeValue)) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    const text = node.nodeValue;
+    while ((m = re.exec(text))) {
+      const ts = m[1] || m[2];
+      frag.append(text.slice(last, m.index));
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ts-link"; b.dataset.t = toSec(ts); b.textContent = "▶ " + ts;
+      b.title = "Прослушать с этого места";
+      frag.append(b);
+      last = m.index + m[0].length;
+    }
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+}
+
+const player = {
+  job: null, part: -1, pending: null, sig: "",
+  audio: $("#audio"),
+  total() { const p = this.job.parts; return p.length ? p[p.length - 1].offset + p[p.length - 1].duration : this.job.duration; },
+  now() { return this.part < 0 ? 0 : this.job.parts[this.part].offset + (this.audio.currentTime || 0); },
+  setup(j) {
+    const sig = j.id + (j.parts || []).length;
+    if (!(j.parts || []).length) { $("#player").hidden = true; return; }
+    $("#player").hidden = false;
+    this.job = j;
+    if (sig === this.sig) return;
+    this.sig = sig; this.part = -1; this.audio.removeAttribute("src");
+    $("#seek").max = Math.round(this.total());
+    $("#dur").textContent = fmtClock(this.total());
+    this.tick();
+  },
+  load(index, offsetSec, play) {
+    if (index !== this.part) {
+      this.part = index;
+      this.audio.src = `/api/jobs/${this.job.id}/audio/${index}`;
+      this.pending = { offsetSec, play };
+      return;
+    }
+    this.audio.currentTime = offsetSec;
+    if (play) this.audio.play();
+  },
+  seek(t, play = true) {
+    const parts = this.job.parts;
+    let i = parts.findIndex((p) => t < p.offset + p.duration);
+    if (i < 0) i = parts.length - 1;
+    this.load(i, Math.max(0, t - parts[i].offset), play);
+  },
+  toggle() {
+    if (this.part < 0) return this.seek(0);
+    this.audio.paused ? this.audio.play() : this.audio.pause();
+  },
+  tick() {
+    const t = this.now();
+    $("#seek").value = t;
+    $("#time").textContent = fmtClock(t);
+    const utts = this.job.utterances || [];
+    let lo = 0, hi = utts.length - 1, idx = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (utts[mid].start <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1; }
+    $("#now-speaker").textContent = idx >= 0 && this.part >= 0 ? speakerLabel(this.job, utts[idx]) : "";
+    const prev = document.querySelector(".utt.active");
+    const cur = idx >= 0 ? document.querySelector(`.utt[data-i="${idx}"]`) : null;
+    if (prev !== cur) { prev?.classList.remove("active"); cur?.classList.add("active"); }
+  },
+};
+player.audio.addEventListener("loadedmetadata", () => {
+  if (!player.pending) return;
+  const { offsetSec, play } = player.pending; player.pending = null;
+  player.audio.currentTime = offsetSec;
+  if (play) player.audio.play();
+});
+player.audio.addEventListener("timeupdate", () => player.tick());
+player.audio.addEventListener("play", () => ($("#btn-play").textContent = "❚❚"));
+player.audio.addEventListener("pause", () => ($("#btn-play").textContent = "▶"));
+player.audio.addEventListener("ended", () => {
+  if (player.part < player.job.parts.length - 1) player.load(player.part + 1, 0, true);
+});
+$("#btn-play").addEventListener("click", () => player.toggle());
+$("#seek").addEventListener("input", (e) => player.seek(Number(e.target.value), !player.audio.paused || player.part < 0));
+$("#btn-rate").addEventListener("click", () => {
+  const rates = [1, 1.25, 1.5, 2], next = rates[(rates.indexOf(player.audio.playbackRate) + 1) % rates.length];
+  player.audio.playbackRate = next; $("#btn-rate").textContent = next + "×";
+});
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".ts, .ts-link");
+  if (b && player.job) player.seek(Number(b.dataset.t));
+});
 
 function renderTexts(j) {
   const texts = j.texts || {};
@@ -252,12 +385,14 @@ function renderJob(j) {
   $("#dl-transcript").href = `/api/jobs/${j.id}/transcript.txt`;
   $("#dl-report").hidden = !j.report;
   $("#btn-reanalyze").hidden = !j.transcript || ACTIVE.includes(j.status);
-  $("#pane-transcript").textContent = j.transcript || "";
+  renderTranscript(j);
+  player.setup(j);
 
   if (j.report.length !== lastReportLen) {
     lastReportLen = j.report.length;
     $("#pane-report").innerHTML = j.report ? DOMPurify.sanitize(marked.parse(j.report)) :
       (j.transcript ? '<p class="muted">Расшифровка готова, модель формирует отчёт…</p>' : "");
+    linkifyTimestamps($("#pane-report"));
     const score = extractScore(j.report);
     $("#score").hidden = !score; if (score) $("#score-val").textContent = score;
   }

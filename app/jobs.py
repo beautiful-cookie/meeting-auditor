@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import client_texts, config, llm, prompt, stt, transcript, validate
+from . import client_texts, config, editor, llm, prompt, roles, stt, transcript, validate
 
 ACTIVE = ("queued", "transcribing", "analyzing")
 
@@ -25,6 +25,8 @@ class Job:
     llm: str = ""
     transcript: str = ""
     utterances: list[dict] = field(default_factory=list)
+    parts: list[dict] = field(default_factory=list)  # [{file, offset, duration}] — для плеера
+    roles: dict = field(default_factory=dict)  # {"roles": {"A": "Менеджер"}, "manager_name", "manager_gender", …}
     metrics: list[dict] = field(default_factory=list)
     report: str = ""
     texts: dict = field(default_factory=dict)  # call_script, client_message, crm_summary
@@ -100,14 +102,28 @@ def run(job: Job, skip_stt: bool = False, log: Callable[[str], None] = lambda m:
                 job.warnings += [w for w in part["warnings"] if w not in job.warnings]
                 job.stt_model = part["model"]
                 parts.append(part)
-            job.utterances, job.duration = transcript.merge(parts)
-            job.transcript = transcript.to_text(job.utterances, job.files)
-            job.metrics = transcript.metrics(job.utterances, n)
-            if not job.transcript.strip():
+            job.utterances, job.parts, job.duration = transcript.merge(parts, job.files)
+            job.roles = {}
+            if not any(u["text"].strip() for u in job.utterances):
                 raise RuntimeError("Речь в записи не распознана — проверьте, что в файле есть звук.")
+        elif not job.parts and len(job.files) == 1:  # встречи, распознанные до появления плеера
+            job.parts = [{"file": job.files[0], "offset": 0.0, "duration": job.duration}]
 
-        job.warnings = [w for w in job.warnings if not w.startswith(("Проверка отчёта:", "Отчёт обрезан"))]
+        job.warnings = [w for w in job.warnings
+                        if not w.startswith(("Проверка отчёта:", "Отчёт обрезан", "Роли спикеров", "Редактор"))]
         job.report, job.texts, job.error, job.llm = "", {}, "", llm.describe()
+        n = len(job.files)
+
+        if not job.roles and job.utterances:
+            step("analyzing", "Определение ролей спикеров")
+            try:
+                job.roles = roles.detect(job.utterances, n)
+            except Exception as e:  # noqa: BLE001 — без ролей анализ всё равно возможен
+                job.warnings.append(f"Роли спикеров не определены: {e}")
+        if job.utterances:
+            job.transcript = transcript.to_text(job.utterances, job.files, job.roles.get("roles"))
+            job.metrics = transcript.metrics(job.utterances, n, job.roles.get("roles"))
+
         step("analyzing", f"Анализ встречи ({job.llm})")
         system, user = prompt.build(job.transcript, job.meta)
         (job_dir(job.id) / "prompt_user.txt").write_text(user, encoding="utf-8")
@@ -123,8 +139,22 @@ def run(job: Job, skip_stt: bool = False, log: Callable[[str], None] = lambda m:
                 job.warnings.append(f"Отчёт обрезан лимитом длины ответа ({config.LLM_MAX_TOKENS} токенов). "
                                     "Увеличьте LLM_MAX_TOKENS или выберите модель с большим лимитом.")
         job.texts = client_texts.extract(job.report)
+
+        step("analyzing", "Редактура текстов для клиента")
+        try:
+            edited = editor.polish(job.texts, job.report, job.roles, job.meta)
+            job.texts.update(edited)
+            for key, num in (("call_script", 9), ("client_message", 10)):
+                if key in edited:  # в markdown одиночный перенос строки склеивается — делаем абзацы
+                    body = "\n\n".join(l for l in edited[key].splitlines() if l.strip())
+                    job.report = client_texts.replace_section(job.report, num, body)
+        except Exception as e:  # noqa: BLE001 — черновик из отчёта остаётся
+            job.warnings.append(f"Редактор не сработал, показаны черновики из отчёта: {e}")
+
         job.warnings += ["Проверка отчёта: " + w
-                         for w in validate.check(job.report) + client_texts.check(job.texts)]
+                         for w in validate.check(job.report, job.transcript)
+                         + client_texts.check(job.texts, job.roles.get("manager_gender") if job.roles else "unknown",
+                                              job.transcript)]
         job.status, job.detail = "done", "Готово"
         log("готово")
     except Exception as e:  # noqa: BLE001 — любую ошибку показываем пользователю

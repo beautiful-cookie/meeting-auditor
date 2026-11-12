@@ -22,6 +22,7 @@ def main() -> int:
     ap.add_argument("--date", default="")
     ap.add_argument("--reanalyze", metavar="JOB_ID")
     ap.add_argument("--model", help="переопределить модель из .env для этого запуска")
+    ap.add_argument("--reroles", action="store_true", help="заново определить роли спикеров")
     a = ap.parse_args()
     if a.model:
         config.OPENAI_MODEL = config.ANTHROPIC_MODEL = a.model
@@ -31,6 +32,8 @@ def main() -> int:
         if not job:
             print("Задача не найдена")
             return 1
+        if a.reroles:
+            job.roles = {}
         jobs.run(job, skip_stt=True, log=print)
     else:
         if not a.files:

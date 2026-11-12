@@ -103,6 +103,18 @@ def reanalyze(job_id: str):
     return {"id": job.id}
 
 
+@app.get("/api/jobs/{job_id}/audio/{index}")
+def audio(job_id: str, index: int):
+    """Аудио части встречи для плеера (FileResponse поддерживает Range — перемотка работает)."""
+    job = _job_or_404(job_id)
+    if not 0 <= index < len(job.files):
+        raise HTTPException(404, "Нет такой части")
+    path = jobs.job_dir(job_id) / job.files[index]
+    if not path.exists():
+        raise HTTPException(404, "Аудиофайл не сохранился")
+    return FileResponse(path)
+
+
 def _download(text: str, filename: str) -> PlainTextResponse:
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{filename}"'})

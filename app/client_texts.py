@@ -32,6 +32,23 @@ def section(report: str, number: int) -> str:
     return "\n".join(lines[start + 1:end]).strip()
 
 
+def replace_section(report: str, number: int, body: str) -> str:
+    """Заменить тело раздела «## N. …», сохранив заголовок."""
+    lines = report.splitlines()
+    start = next((i for i, l in enumerate(lines)
+                  if re.match(rf"^(#+)\s*\**\s*{number}\.\s", l)), None)
+    if start is None:
+        return report
+    level = len(re.match(r"^#+", lines[start]).group(0))
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        h = re.match(r"^(#+)\s", lines[i])
+        if h and len(h.group(1)) <= level:
+            end = i
+            break
+    return "\n".join(lines[:start + 1] + ["", body.strip(), ""] + lines[end:])
+
+
 def strip_markdown(text: str) -> str:
     text = re.sub(r"^\s*>\s?", "", text, flags=re.M)          # цитаты
     text = re.sub(r"^\s*-{3,}\s*$", "", text, flags=re.M)      # горизонтальные линии
@@ -73,8 +90,23 @@ def extract(report: str) -> dict:
     return out
 
 
-def check(texts: dict) -> list[str]:
+GENDERED = re.compile(r"\b(хотел|хотела|понял|поняла|готов|готова|рад|рада|уточнил|уточнила|"
+                      r"подготовил|подготовила|посчитал|посчитала|отправил|отправила|смог|смогла)\b", re.I)
+
+
+def check(texts: dict, manager_gender: str | None = "unknown", transcript: str = "") -> list[str]:
     issues = []
+    if transcript:
+        from .validate import name_heard
+        for key, title in (("call_script", "Скрипт звонка"), ("client_message", "Сообщение клиенту")):
+            # «Это Лиля из Royal Brick» — имя, которого нет в записи, модель выдумала
+            for name in re.findall(r"\b[Ээ]то ([А-ЯЁ][а-яё]+)\b", texts.get(key, "")):
+                if name not in ("Royal",) and not name_heard(name, transcript):
+                    issues.append(f"{title}: имени «{name}» нет в записи разговора — проверьте, кто звонит.")
+    if manager_gender is None:
+        for key, title in (("call_script", "Скрипт звонка"), ("client_message", "Сообщение клиенту")):
+            if m := GENDERED.search(texts.get(key, "")):
+                issues.append(f"{title}: «{m.group(0)}» — род менеджера по записи не определён, проверьте форму.")
     names = {"call_script": "Скрипт звонка", "client_message": "Сообщение клиенту"}
     for key, title in names.items():
         t = texts.get(key, "")
