@@ -7,11 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=10">
-  <script>
-    // Тема до отрисовки, чтобы не мигала: light | dark; без записи — по системе
-    try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (_) {}
-  </script>
+  <link rel="stylesheet" href="/static/style.css?v=12">
+  <script src="/static/theme.js?v=1"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
@@ -77,7 +74,12 @@
       </div>
 
       <details class="panel meta">
-        <summary>Данные встречи <span class="sub">необязательно, повышают точность анализа</span></summary>
+        <summary>
+          <span class="sum-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span>
+          <span class="sum-text"><b>Данные встречи</b><span class="sub">Необязательно, повышают точность анализа</span></span>
+          <span class="chev"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+        </summary>
+        <div class="details-body"><div class="details-inner">
         <div class="grid2">
           <label>Менеджер<input name="manager_name" placeholder="Имя менеджера"></label>
           <label>ID менеджера<input name="manager_id"></label>
@@ -89,6 +91,7 @@
         <label>Данные о сделке из CRM<textarea name="crm_data" rows="2"></textarea></label>
         <label>История предыдущих контактов<textarea name="client_history" rows="2"></textarea></label>
         <label>Сведения о продукции и технических требованиях<textarea name="product_knowledge" rows="2"></textarea></label>
+        </div></div>
       </details>
       <div class="alert error" id="new-error" hidden></div>
     </section>
@@ -185,6 +188,6 @@
     </section>
   </main>
 </div>
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=13"></script>
 </body>
 </html>

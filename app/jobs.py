@@ -1,5 +1,6 @@
 """Задача «встреча»: файлы → распознавание → анализ. Состояние в памяти, копия на диске в data/<id>/."""
 import json
+import shutil
 import threading
 import time
 import uuid
@@ -175,8 +176,21 @@ def run(job: Job, skip_stt: bool = False, log: Callable[[str], None] = lambda m:
     return job
 
 
-def start(job: Job, skip_stt: bool = False) -> None:
+def start(job: Job, skip_stt: bool = False) -> bool:
+    """Запуск в фоне. Проверка и смена статуса под замком: двойной клик не запустит два анализа одной встречи."""
+    with _lock:
+        if job.status in ACTIVE and job.detail:  # уже идёт (detail пуст только у только что созданной)
+            return False
+        job.status, job.detail = "queued", "В очереди"
     threading.Thread(target=run, args=(job, skip_stt), daemon=True).start()
+    return True
+
+
+def discard(job: Job) -> None:
+    """Убрать встречу, которая не создалась (ошибка загрузки), вместе с файлами."""
+    with _lock:
+        _jobs.pop(job.id, None)
+    shutil.rmtree(job_dir(job.id), ignore_errors=True)
 
 
 _load_all()

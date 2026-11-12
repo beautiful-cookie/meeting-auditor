@@ -11,8 +11,10 @@ let lastReportLen = -1;
 let lastOverviewKey = "";
 
 /* ---------- Общее ---------- */
+// Заголовок нужен серверу для защиты от CSRF: изменяющие запросы без него отклоняются
+const CSRF = { "X-Requested-With": "auditor" };
 async function api(path, opts = {}) {
-  const r = await fetch(path, opts);
+  const r = await fetch(path, { ...opts, headers: { ...CSRF, ...(opts.headers || {}) } });
   if (!r.ok) {
     let msg = r.statusText;
     try { msg = (await r.json()).detail || msg; } catch (_) {}
@@ -98,6 +100,28 @@ function metaForm() {
 }
 function showError(el, msg) { el.textContent = msg; el.hidden = !msg; }
 
+/* ---------- Раскрывающийся блок «Данные встречи» с анимацией ---------- */
+// <details> сам по себе открывается рывком: перехватываем клик и анимируем высоту и прозрачность
+$$("details.meta").forEach((d) => {
+  const body = d.querySelector(".details-body");
+  let anim = null;
+  d.querySelector("summary").addEventListener("click", (e) => {
+    e.preventDefault();
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { d.open = !d.open; return; }
+    const opening = !d.open || anim?.closing;
+    const from = body.getBoundingClientRect().height;
+    anim?.cancel();
+    if (opening) d.open = true;
+    const to = opening ? body.scrollHeight : 0;
+    anim = body.animate(
+      [{ height: from + "px", opacity: opening ? 0 : 1 }, { height: to + "px", opacity: opening ? 1 : 0 }],
+      { duration: 380, easing: "cubic-bezier(.2,.8,.2,1)" });
+    anim.closing = !opening;
+    anim.onfinish = () => { if (!opening) d.open = false; anim = null; };
+    if (opening) setTimeout(() => d.querySelector("input")?.focus({ preventScroll: true }), 200);
+  });
+});
+
 /* ---------- Отправка ---------- */
 function upload(files, label) {
   return new Promise((resolve, reject) => {
@@ -105,6 +129,7 @@ function upload(files, label) {
     files.forEach((f) => fd.append("files", f, f.name));
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/jobs");
+    xhr.setRequestHeader("X-Requested-With", CSRF["X-Requested-With"]);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) $("#job-detail").textContent = `${label}… ${Math.round(e.loaded / e.total * 100)}%`;
     };
@@ -325,8 +350,8 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-section]");
   if (!b) return;
   switchTab("report");
-  const h = $$("#pane-report h1, #pane-report h2, #pane-report h3").find((el) => el.textContent.trim().startsWith(b.dataset.section + "."));
-  if (h) { h.scrollIntoView({ behavior: "smooth", block: "start" }); h.classList.remove("flash"); void h.offsetWidth; h.classList.add("flash"); }
+  const sec = document.getElementById("sec-" + b.dataset.section);
+  if (sec) { sec.scrollIntoView({ behavior: "smooth", block: "start" }); sec.classList.remove("flash"); void sec.offsetWidth; sec.classList.add("flash"); }
 });
 
 /* ---------- Роли и расшифровка ---------- */
@@ -364,6 +389,38 @@ function renderTranscript(j) {
   }
   pane.innerHTML = html;
   search.run();
+}
+
+// Отчёт одним полотном читается тяжело: режем по заголовкам «## N.» на карточки и строим оглавление
+function sectionizeReport(root) {
+  const frag = document.createDocumentFragment(), toc = [];
+  let sec = null;
+  const isHead = (n) => n.nodeType === 1 && /^H[12]$/.test(n.tagName);
+  for (const n of [...root.childNodes]) {
+    if (n.nodeType === 1 && n.tagName === "HR") continue;  // разделители заменяют сами карточки
+    if (isHead(n) || !sec) {
+      sec = document.createElement("section");
+      sec.className = "rsec";
+      frag.append(sec);
+      const m = isHead(n) && n.textContent.trim().match(/^(\d{1,2})[.)]\s*(.+)$/);
+      if (m) {
+        n.innerHTML = `<span class="sec-num" aria-hidden="true">${m[1]}</span><span>${esc(m[2])}</span>`;
+        n.setAttribute("aria-label", `${m[1]}. ${m[2]}`);
+        sec.id = "sec-" + m[1];
+        toc.push([m[1], m[2]]);
+      }
+    }
+    sec.append(n);
+  }
+  root.replaceChildren(frag);
+  $$("#pane-report .rsec").forEach((s) => { if (!s.textContent.trim()) s.remove(); });
+  if (toc.length > 2) {
+    const nav = document.createElement("nav");
+    nav.className = "toc";
+    nav.innerHTML = toc.map(([n, t]) =>
+      `<button type="button" data-section="${n}"><b>${n}</b>${esc(t.length > 26 ? t.slice(0, 24) + "…" : t)}</button>`).join("");
+    root.prepend(nav);
+  }
 }
 
 // [00:12:40] и 00:12:40 в отчёте → кнопки, которые включают запись с этого места
@@ -505,7 +562,13 @@ const search = {
       const p = el.querySelector("p");
       if (re && re.test(text)) {
         re.lastIndex = 0;
-        p.innerHTML = esc(text).replace(new RegExp(re.source.replace(/&/g, "&amp;"), "gi"), (m) => `<mark>${m}</mark>`);
+        // Ищем по исходному тексту и экранируем каждый кусок отдельно: иначе запрос «qu» попал бы внутрь &quot;
+        let html = "", last = 0, m;
+        while ((m = re.exec(text))) {
+          html += esc(text.slice(last, m.index)) + `<mark>${esc(m[0])}</mark>`;
+          last = m.index + m[0].length;
+        }
+        p.innerHTML = html + esc(text.slice(last));
         this.hits.push(el);
       } else if (p.querySelector("mark")) {
         p.textContent = text;
@@ -592,10 +655,13 @@ function renderJob(j) {
   player.setup(j);
 
   if (j.report.length !== lastReportLen) {
+    const firstRender = lastReportLen === -1;
     lastReportLen = j.report.length;
     $("#pane-report").innerHTML = j.report ? DOMPurify.sanitize(marked.parse(j.report)) :
-      (j.transcript ? '<p class="sub">Расшифровка готова, модель формирует отчёт…</p>' : "");
+      (j.transcript ? '<p class="sub rsec">Расшифровка готова, модель формирует отчёт…</p>' : "");
+    if (j.report) sectionizeReport($("#pane-report"));
     linkifyTimestamps($("#pane-report"));
+    if (firstRender && j.status === "done") reveal([$(".toc"), ...$$("#pane-report .rsec").slice(0, 4)]);
   }
   // Сводку перерисовываем, только когда что-то поменялось: лишняя отрисовка сбросила бы анимацию столбиков
   const overviewKey = `${j.id}|${j.status}|${j.report.length}`;

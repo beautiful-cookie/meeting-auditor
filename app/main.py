@@ -2,7 +2,6 @@
 import base64
 import re
 import secrets
-import shutil
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
@@ -11,6 +10,31 @@ from fastapi.staticfiles import StaticFiles
 from . import config, jobs, llm, stt
 
 app = FastAPI(title="Аудитор встреч")
+
+
+AUDIO_EXT = {".m4a", ".mp3", ".wav", ".ogg", ".oga", ".opus", ".webm", ".mp4", ".aac", ".flac", ".amr", ".3gp", ".mov", ".wma"}
+MAX_FILES = 20
+MAX_FIELD_CHARS = 5000  # поле формы целиком уходит в промпт — ограничиваем, чтобы не раздувать стоимость
+
+CSP = ("default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+       "img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; "
+       "base-uri 'none'; form-action 'self'")
+
+
+@app.middleware("http")
+async def security(request: Request, call_next):
+    # CSRF: изменяющие запросы принимаем только от нашего JS — он ставит заголовок, который чужая страница
+    # без разрешения CORS отправить не может. Без этого любой сайт мог бы запустить платный анализ.
+    if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-requested-with") != "auditor":
+        return Response("Forbidden", status_code=403)
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "microphone=(self), camera=(), geolocation=()"
+    return response
 
 
 @app.middleware("http")
@@ -49,8 +73,8 @@ def index():
 
 @app.get("/api/config")
 def get_config():
-    return {"llm": llm.describe(), "llm_ready": llm.ready(), "stt_ready": stt.ready(),
-            "stt_model": config.ASSEMBLYAI_SPEECH_MODEL}
+    # Только готовность: какой хост и модель стоят за анализом, наружу не отдаём
+    return {"llm_ready": llm.ready(), "stt_ready": stt.ready()}
 
 
 @app.post("/api/jobs")
@@ -61,22 +85,36 @@ def create_job(
     crm_data: str = Form(""), client_history: str = Form(""),
     company_rules: str = Form(""), product_knowledge: str = Form(""),
 ):
-    if not stt.ready():
-        raise HTTPException(400, "Не задан ASSEMBLYAI_API_KEY в .env — распознавание недоступно")
-    if not llm.ready():
-        raise HTTPException(400, f"Не задан ключ для LLM ({llm.describe()}) в .env")
+    if not stt.ready() or not llm.ready():
+        raise HTTPException(400, "Приложение не настроено: не заданы ключи API (см. README)")
+    if len(files) > MAX_FILES:
+        raise HTTPException(400, f"Не больше {MAX_FILES} файлов за раз")
+    for f in files:
+        ext = "." + (f.filename or "").rsplit(".", 1)[-1].lower() if "." in (f.filename or "") else ""
+        audio_like = (f.content_type or "").startswith(("audio/", "video/"))
+        if ext not in AUDIO_EXT and not audio_like:
+            raise HTTPException(415, f"«{f.filename}» не похож на аудиозапись")
 
-    meta = {k: v for k, v in locals().items() if isinstance(v, str)}
+    meta = {k: v.strip()[:MAX_FIELD_CHARS] for k, v in locals().items() if isinstance(v, str)}
     job = jobs.new(meta)
     limit = config.MAX_UPLOAD_MB * 1024 * 1024
-    for i, f in enumerate(files, start=1):
-        name = f"{i:02d}_{_safe_name(f.filename)}"
-        dest = jobs.job_dir(job.id) / name
-        with open(dest, "wb") as out:
-            shutil.copyfileobj(f.file, out, 1024 * 1024)
-        if dest.stat().st_size > limit:
-            raise HTTPException(413, f"Файл больше {config.MAX_UPLOAD_MB} МБ")
-        job.files.append(name)
+    try:
+        for i, f in enumerate(files, start=1):
+            name = f"{i:02d}_{_safe_name(f.filename)}"
+            written = 0
+            with open(jobs.job_dir(job.id) / name, "wb") as out:
+                # Считаем байты по ходу записи: слишком большой файл обрываем сразу, а не после записи на диск
+                while chunk := f.file.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > limit:
+                        raise HTTPException(413, f"Файл больше {config.MAX_UPLOAD_MB} МБ")
+                    out.write(chunk)
+            if written == 0:
+                raise HTTPException(400, f"Файл «{f.filename}» пустой")
+            job.files.append(name)
+    except BaseException:
+        jobs.discard(job)  # не оставляем «висящую» встречу в истории
+        raise
     jobs.save(job)
     jobs.start(job)
     return {"id": job.id}
@@ -99,7 +137,8 @@ def reanalyze(job_id: str):
         raise HTTPException(409, "Встреча ещё обрабатывается")
     if not job.transcript:
         raise HTTPException(400, "Нет расшифровки — нужно распознать запись заново")
-    jobs.start(job, skip_stt=True)
+    if not jobs.start(job, skip_stt=True):
+        raise HTTPException(409, "Встреча ещё обрабатывается")
     return {"id": job.id}
 
 
