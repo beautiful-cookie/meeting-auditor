@@ -344,6 +344,7 @@ function renderOverview(j) {
       <p>${esc(text)}</p><button type="button" data-section="${n}">Подробнее в отчёте</button></div>` : "";
   }).join("");
   $("#insights").innerHTML = items || '<p class="sub">Появятся, когда отчёт будет готов.</p>';
+  linkifyTimestamps($("#insights"));  // «[00:05:11]» в инсайтах тоже включает запись с этого места
 }
 
 document.addEventListener("click", (e) => {
