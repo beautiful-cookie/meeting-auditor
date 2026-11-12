@@ -12,23 +12,39 @@
   --warn-bg: #fff4e5; --err-bg: #fdecea;
   --role-0: #7b5cff; --role-1: #1fae63; --role-2: #ef8a2c; --role-3: #2f7be8;
   --lane: #f0f0f4; --progress: #e4e4ea; --progress-fill: #a3a3ad; --mark: #ffe58a;
+  --chip-good-bg: #d9f5e3; --chip-good: #126b3a; --chip-mid-bg: #fff0d9; --chip-mid: #8a4b05;
+  --chip-low-bg: #fde1df; --chip-low: #8f1d17;
   --shadow: 0 20px 60px rgba(70, 60, 140, .12);
   --r: 18px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: light;
+}
+/* Тёмная тема: выбрана вручную или «авто» при тёмной системной теме.
+   Блоки одинаковые — CSS не умеет объединить селектор и медиазапрос в одно правило. */
+:root[data-theme="dark"] {
+  --page: #2b2c30; --shell: #1d1e23; --panel: #24252b; --panel-2: #2b2c33;
+  --text: #f3f3f5; --muted: #9b9ca6; --line: #33343c;
+  --accent: #8f7bff; --accent-soft: #2e2a45; --accent-ink: #fff; --ink: #f3f3f5; --ink-text: #17171a;
+  --peach: #3b3024; --lav: #26304a; --grey: #2f3038; --tile-text: #f3f3f5;
+  --ring: #22c55e; --good: #3ccf7a; --warn: #f5a04a; --bad: #ff6b63; --warn-bg: #3a2c17; --err-bg: #3d1d1b;
+  --role-0: #9d8cff; --role-1: #3ccf7a; --role-2: #f5a04a; --role-3: #5b9bff;
+  --lane: #2e2f37; --progress: #34353d; --progress-fill: #6b6c76; --mark: #6b5a12;
+  --chip-good-bg: #183a27; --chip-good: #7fe0a6; --chip-mid-bg: #3d2e17; --chip-mid: #f7c27f;
+  --chip-low-bg: #3f1f1d; --chip-low: #ff9d97;
+  --shadow: 0 20px 60px rgba(0, 0, 0, .35); color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --page: #2b2c30;
-    --shell: #1d1e23;
-    --panel: #24252b; --panel-2: #2b2c33;
+  :root:not([data-theme="light"]) {
+    --page: #2b2c30; --shell: #1d1e23; --panel: #24252b; --panel-2: #2b2c33;
     --text: #f3f3f5; --muted: #9b9ca6; --line: #33343c;
-    --accent: #8f7bff; --accent-soft: #2e2a45; --accent-ink: #fff;
-    --ink: #f3f3f5; --ink-text: #17171a;
+    --accent: #8f7bff; --accent-soft: #2e2a45; --accent-ink: #fff; --ink: #f3f3f5; --ink-text: #17171a;
     --peach: #3b3024; --lav: #26304a; --grey: #2f3038; --tile-text: #f3f3f5;
-    --ring: #22c55e; --good: #3ccf7a; --warn: #f5a04a; --bad: #ff6b63;
-    --warn-bg: #3a2c17; --err-bg: #3d1d1b;
+    --ring: #22c55e; --good: #3ccf7a; --warn: #f5a04a; --bad: #ff6b63; --warn-bg: #3a2c17; --err-bg: #3d1d1b;
     --role-0: #9d8cff; --role-1: #3ccf7a; --role-2: #f5a04a; --role-3: #5b9bff;
     --lane: #2e2f37; --progress: #34353d; --progress-fill: #6b6c76; --mark: #6b5a12;
-    --shadow: 0 20px 60px rgba(0, 0, 0, .35);
+    --chip-good-bg: #183a27; --chip-good: #7fe0a6; --chip-mid-bg: #3d2e17; --chip-mid: #f7c27f;
+    --chip-low-bg: #3f1f1d; --chip-low: #ff9d97;
+    --shadow: 0 20px 60px rgba(0, 0, 0, .35); color-scheme: dark;
   }
 }
 
@@ -67,13 +83,23 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .h-meta { grid-column: 1; font-size: .76rem; color: var(--muted); }
 .h-score { grid-row: 1 / span 2; grid-column: 2; font-weight: 800; font-size: .8rem; padding: 3px 8px; border-radius: 999px;
   background: var(--panel-2); color: var(--text); }
-.h-score.good { background: #d9f5e3; color: #126b3a; } .h-score.mid { background: #fff0d9; color: #8a4b05; } .h-score.low { background: #fde1df; color: #8f1d17; }
-@media (prefers-color-scheme: dark) {
-  .h-score.good { background: #183a27; color: #7fe0a6; } .h-score.mid { background: #3d2e17; color: #f7c27f; } .h-score.low { background: #3f1f1d; color: #ff9d97; }
-}
-.services { margin-top: auto; display: grid; gap: 6px; font-size: .76rem; color: var(--muted); padding: 0 8px; }
-.services span::before { content: "●"; margin-right: 6px; color: var(--good); }
-.services span.bad::before { color: var(--bad); }
+.h-score.good { background: var(--chip-good-bg); color: var(--chip-good); }
+.h-score.mid { background: var(--chip-mid-bg); color: var(--chip-mid); }
+.h-score.low { background: var(--chip-low-bg); color: var(--chip-low); }
+.history a.current .h-score { background: rgba(127, 127, 127, .25); color: inherit; }
+
+/* Переключатель темы */
+.theme { margin-top: auto; padding: 0 8px; }
+.theme-label { font-size: .78rem; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.theme-switch { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); padding: 4px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line); }
+.theme-switch button { position: relative; z-index: 1; border: 0; background: none; color: var(--muted); padding: 7px 0; cursor: pointer;
+  display: grid; place-items: center; border-radius: 999px; transition: color .25s; }
+.theme-switch button[aria-pressed="true"] { color: var(--ink-text); }
+.theme-switch svg { width: 16px; height: 16px; }
+.theme-thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 3); border-radius: 999px;
+  background: var(--ink); transition: transform .35s var(--ease); }
+.setup-warn { font-size: .78rem; color: var(--bad); padding: 0 8px; }
 
 .main { padding: 28px 30px 40px; min-width: 0; container: main / inline-size; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -293,10 +319,14 @@ input:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-colo
 }
 @media (max-width: 900px) {
   .shell { grid-template-columns: minmax(0, 1fr); margin: 0; border-radius: 0; min-height: 100vh; }
-  .side { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 16px; gap: 8px; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 16px; gap: 10px;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "logo theme" "nav nav" "warn warn"; align-items: center; }
+  .logo { grid-area: logo; } .theme { grid-area: theme; margin: 0; padding: 0; width: 120px; } .side nav { grid-area: nav; }
+  .setup-warn { grid-area: warn; }
+  .theme-label { display: none; }
   .side nav { display: flex; gap: 8px; overflow-x: auto; align-items: center; scrollbar-width: none; }
   .nav-item { white-space: nowrap; flex: none; }
-  .nav-label, .services { display: none; }
+  .nav-label { display: none; }
   .history { display: flex; gap: 6px; }
   .history a { white-space: nowrap; }
   .main { padding: 20px 16px 32px; }
@@ -308,4 +338,51 @@ input:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-colo
   .tab { white-space: nowrap; }
   .report { padding: 4px 16px 18px; }
   .head-actions .btn { padding: 6px 12px; }
+}
+
+/* ---------- Анимации ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes pop { 0% { transform: scale(.85); opacity: 0; } 70% { transform: scale(1.04); } }
+@keyframes ripple { from { transform: scale(1); opacity: .55; } to { transform: scale(1.9); opacity: 0; } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* Появление блоков по очереди: JS ставит .reveal и --i */
+.reveal { animation: rise .6s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.pane-enter { animation: fade .3s ease both; }
+.score-level.pop { animation: pop .5s var(--ease) both .5s; }
+
+/* Кольцо и столбики «растут» от нуля */
+.ring-val { transition: stroke-dashoffset 1.3s var(--ease); }
+.bar-col { transition: height .8s var(--ease), width .8s var(--ease); transition-delay: calc(var(--i, 0) * 60ms); }
+
+/* Отклик на наведение и нажатие */
+.btn, .ctl, .tab, .nav-item, .history a, .insight button { transition: transform .15s ease, background-color .2s, border-color .2s, color .2s, box-shadow .2s; }
+.btn:active, .ctl:active, .tab:active { transform: scale(.96); }
+.tile { transition: transform .25s var(--ease), box-shadow .25s var(--ease); }
+.tile:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(40, 30, 90, .12); }
+.insight { transition: transform .25s var(--ease), border-color .2s; }
+.insight:hover { transform: translateY(-2px); border-color: var(--accent); }
+.utt { transition: background-color .3s, border-color .3s; }
+.drop { transition: border-color .2s, background-color .2s; }
+.drop:hover svg { animation: rise .5s var(--ease); }
+
+/* Кнопка записи: мягкое свечение при наведении, расходящиеся кольца во время записи */
+.rec-btn { position: relative; transition: transform .2s var(--ease), box-shadow .2s; }
+.rec-btn:hover { transform: scale(1.05); box-shadow: 0 16px 40px rgba(123, 92, 255, .45); }
+.rec-btn::before, .rec-btn::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent);
+  opacity: 0; pointer-events: none; }
+.recording .rec-btn::before { animation: ripple 1.8s ease-out infinite; }
+.recording .rec-btn::after { animation: ripple 1.8s ease-out infinite .9s; }
+
+/* Текущий шаг обработки «переливается» */
+.steps li.active { background: linear-gradient(90deg, var(--ink) 0%, color-mix(in srgb, var(--ink) 70%, var(--accent)) 50%, var(--ink) 100%);
+  background-size: 200% 100%; animation: shimmer 2.2s linear infinite; }
+
+/* Плавная смена темы: класс висит на <html> полсекунды после переключения */
+.theme-anim, .theme-anim * { transition: background-color .45s ease, color .45s ease, border-color .45s ease, fill .45s, stroke .45s !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; transition-delay: 0s !important; }
 }

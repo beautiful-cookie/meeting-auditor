@@ -8,6 +8,7 @@ let pollTimer = null;
 let currentJobId = null;
 let currentJob = null;
 let lastReportLen = -1;
+let lastOverviewKey = "";
 
 /* ---------- Общее ---------- */
 async function api(path, opts = {}) {
@@ -33,13 +34,47 @@ const ICON = {
   pause: '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>',
 };
 
+// Технические детали не показываем — только предупреждение, если приложение не настроено
 async function loadConfig() {
   try {
     const c = await api("/api/config");
-    $("#cfg").innerHTML =
-      `<span class="${c.stt_ready ? "" : "bad"}">Распознавание: AssemblyAI</span>` +
-      `<span class="${c.llm_ready ? "" : "bad"}">Анализ: ${esc(c.llm)}</span>`;
+    const missing = [!c.stt_ready && "распознавания речи", !c.llm_ready && "анализа"].filter(Boolean);
+    $("#cfg").textContent = missing.length ? `Не настроены ключи для ${missing.join(" и ")} — см. README` : "";
+    $("#cfg").hidden = !missing.length;
   } catch (_) {}
+}
+
+/* ---------- Тема ---------- */
+const THEMES = ["auto", "light", "dark"];
+function getTheme() { try { return localStorage.getItem("theme") || "auto"; } catch (_) { return "auto"; } }
+function applyTheme(theme, animate) {
+  const root = document.documentElement;
+  if (animate) { root.classList.add("theme-anim"); setTimeout(() => root.classList.remove("theme-anim"), 500); }
+  if (theme === "auto") delete root.dataset.theme; else root.dataset.theme = theme;
+  try { theme === "auto" ? localStorage.removeItem("theme") : localStorage.setItem("theme", theme); } catch (_) {}
+  $$("[data-theme-set]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === theme)));
+  $("#theme-thumb").style.transform = `translateX(${THEMES.indexOf(theme) * 100}%)`;
+}
+$$("[data-theme-set]").forEach((b) => b.addEventListener("click", () => applyTheme(b.dataset.themeSet, true)));
+applyTheme(getTheme(), false);
+
+/* ---------- Анимации появления ---------- */
+function reveal(els) {
+  els.filter(Boolean).forEach((el, i) => {
+    el.classList.remove("reveal");
+    void el.offsetWidth;  // перезапуск анимации
+    el.style.setProperty("--i", i);
+    el.classList.add("reveal");
+  });
+}
+function countUp(el, to, ms = 1100) {
+  const start = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - start) / ms), eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(to * eased);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 async function loadHistory() {
@@ -227,15 +262,26 @@ function splitValue(v) {  // «близок к покупке, но ждёт з�
 }
 const LEVELS = [[90, "Отличный уровень"], [80, "Хороший уровень"], [70, "Удовлетворительно"], [60, "Слабая встреча"], [0, "Неудовлетворительно"]];
 
+let animatedFor = null;  // анимация сводки — один раз на встречу, а не на каждый опрос сервера
 function renderOverview(j) {
   const md = j.report || "";
   const has = j.score != null || (j.stages || []).length;
   $("#overview").hidden = !has;
   if (!has) return;
+  const animate = animatedFor !== j.id;
+  animatedFor = j.id;
 
   const score = j.score;
-  $("#score-val").textContent = score != null ? Math.round(score) : "—";
-  $("#ring-val").style.strokeDashoffset = 326.7 * (1 - Math.min(100, score || 0) / 100);
+  const offset = 326.7 * (1 - Math.min(100, score || 0) / 100);
+  if (animate && score != null) {
+    $("#ring-val").style.strokeDashoffset = 326.7;
+    requestAnimationFrame(() => requestAnimationFrame(() => ($("#ring-val").style.strokeDashoffset = offset)));
+    countUp($("#score-val"), Math.round(score));
+    $("#score-level").classList.remove("pop"); void $("#score-level").offsetWidth; $("#score-level").classList.add("pop");
+  } else {
+    $("#ring-val").style.strokeDashoffset = offset;
+    $("#score-val").textContent = score != null ? Math.round(score) : "—";
+  }
   $("#score-level").textContent = score != null ? LEVELS.find(([t]) => score >= t)[1] : "";
 
   const [stage, stageSub] = splitValue(reportField(md, "Стадия принятия решения") || reportField(md, "Стадия") || "—");
@@ -248,14 +294,20 @@ function renderOverview(j) {
   $("#tile-talk").textContent = mgr ? `${Math.round(mgr.share)}% времени` : "—";
   $("#tile-talk-sub").textContent = mgr ? `${mgr.questions} вопросов${client ? ` · клиент ${Math.round(client.share)}%` : ""}` : "";
 
-  $("#bars").innerHTML = (j.stages || []).map((s) => {
+  $("#bars").innerHTML = (j.stages || []).map((s, i) => {
     const pct = s.got == null ? null : Math.round(s.got / s.max * 100);
     const cls = pct == null ? "na" : pct >= 80 ? "" : pct >= 50 ? "mid" : "low";
+    const h = pct == null ? 100 : Math.max(pct, 6);
     const tip = `${s.stage}. ${s.title}: ${s.got == null ? "Н/П" : `${s.got} из ${s.max}`}${s.comment ? " — " + s.comment : ""}`;
     return `<div class="bar" title="${esc(tip)}"><span class="bar-val">${pct == null ? "Н/П" : pct + "%"}</span>
-      <div class="bar-track"><div class="bar-col ${cls}" style="--pct:${pct == null ? 100 : Math.max(pct, 6)}%"></div></div>
+      <div class="bar-track"><div class="bar-col ${cls}" data-pct="${h}" style="--i:${i};--pct:${animate ? 0 : h}%"></div></div>
       <span class="bar-name">${esc(s.title)}</span></div>`;
   }).join("");
+  if (animate) {  // столбики растут по очереди
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      $$("#bars .bar-col").forEach((el) => el.style.setProperty("--pct", el.dataset.pct + "%"))));
+    reveal([$(".score-card"), ...$$(".tile"), $(".stages-card"), $(".insights-card"), $("#player"), $("#tabs")]);
+  }
 
   const items = [
     [3, "Что получилось", ICON.check, "var(--good)"],
@@ -480,7 +532,7 @@ $("#search").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.pre
 
 /* ---------- Экран встречи ---------- */
 function openJobView(id) {
-  currentJobId = id; currentJob = null; lastReportLen = -1;
+  currentJobId = id; currentJob = null; lastReportLen = -1; animatedFor = null; lastOverviewKey = "";
   $("#view-new").hidden = true; $("#view-job").hidden = false;
   $("#nav-new").classList.remove("active");
   $("#job-title").textContent = "Встреча"; $("#job-sub").textContent = "";
@@ -516,7 +568,7 @@ function renderJob(j) {
   $("#job-title").textContent = roles.client_name ? `Встреча с клиентом: ${roles.client_name}`
     : j.meta.manager_name ? `Встреча: ${j.meta.manager_name}` : names.length > 1 ? `Встреча из ${names.length} частей` : names[0] || "Встреча";
   const manager = j.meta.manager_name || roles.manager_name;
-  $("#job-sub").textContent = [fmtDate(j.created), j.duration ? fmtDur(j.duration) : "", manager ? `менеджер ${manager}` : "", j.llm]
+  $("#job-sub").textContent = [fmtDate(j.created), j.duration ? fmtDur(j.duration) : "", manager ? `менеджер ${manager}` : ""]
     .filter(Boolean).join(" · ");
 
   if (j.status === "error") {
@@ -544,9 +596,10 @@ function renderJob(j) {
     $("#pane-report").innerHTML = j.report ? DOMPurify.sanitize(marked.parse(j.report)) :
       (j.transcript ? '<p class="sub">Расшифровка готова, модель формирует отчёт…</p>' : "");
     linkifyTimestamps($("#pane-report"));
-    if (j.status !== "analyzing") renderOverview(j);
   }
-  if (j.status === "done") renderOverview(j);
+  // Сводку перерисовываем, только когда что-то поменялось: лишняя отрисовка сбросила бы анимацию столбиков
+  const overviewKey = `${j.id}|${j.status}|${j.report.length}`;
+  if (j.status !== "analyzing" && overviewKey !== lastOverviewKey) { lastOverviewKey = overviewKey; renderOverview(j); }
   renderTexts(j);
   $("#pane-report").classList.toggle("streaming", j.status === "analyzing");
 }
@@ -567,9 +620,12 @@ async function poll(id) {
 
 function switchTab(name) {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  $("#pane-report").hidden = name !== "report";
-  $("#pane-texts").hidden = name !== "texts";
-  $("#pane-transcript").hidden = name !== "transcript";
+  const panes = { report: "#pane-report", texts: "#pane-texts", transcript: "#pane-transcript" };
+  for (const [key, sel] of Object.entries(panes)) {
+    const el = $(sel), show = key === name, wasHidden = el.hidden;
+    el.hidden = !show;
+    if (show && wasHidden) { el.classList.remove("pane-enter"); void el.offsetWidth; el.classList.add("pane-enter"); }
+  }
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
@@ -593,6 +649,7 @@ function route() {
   else if (!rec.mr) {
     currentJobId = null; currentJob = null; player.audio.pause();
     $("#view-job").hidden = true; $("#view-new").hidden = false; $("#nav-new").classList.add("active");
+    reveal([$("#view-new .page-head"), $(".record-panel"), $(".upload-panel"), $(".meta")]);
   }
   loadHistory();
 }
