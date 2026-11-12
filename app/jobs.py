@@ -36,7 +36,16 @@ class Job:
 
     def summary(self) -> dict:
         return {"id": self.id, "created": self.created, "status": self.status, "files": self.files,
-                "duration": self.duration, "manager_name": self.meta.get("manager_name", "")}
+                "duration": self.duration, "score": validate.total_score(self.report) if self.report else None,
+                "manager_name": self.meta.get("manager_name") or (self.roles or {}).get("manager_name") or "",
+                "client_name": (self.roles or {}).get("client_name") or ""}
+
+    def view(self) -> dict:
+        """Всё для экрана встречи: поля задачи + разобранные из отчёта баллы."""
+        data = asdict(self)
+        data["stages"] = validate.stage_table(self.report) if self.report else []
+        data["score"] = validate.total_score(self.report) if self.report else None
+        return data
 
 
 _jobs: dict[str, Job] = {}

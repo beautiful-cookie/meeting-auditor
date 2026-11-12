@@ -4,142 +4,174 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Аудитор встреч</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=7">
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="#">Аудитор встреч</a>
-  <div class="status" id="cfg"></div>
-</header>
-
-<main class="layout">
-  <!-- Новая встреча -->
-  <section class="card" id="view-new">
-    <h1>Новая встреча</h1>
-    <p class="muted">Запишите разговор или загрузите готовую запись. После остановки запись автоматически
-      расшифруется, а ИИ разберёт встречу по регламенту отдела продаж.</p>
-
-    <div class="recorder" id="recorder">
-      <button class="rec-btn" id="btn-rec" type="button" aria-label="Начать запись">
-        <span class="rec-dot"></span>
-      </button>
-      <div class="rec-info">
-        <div class="rec-title" id="rec-title">Начать запись</div>
-        <div class="rec-sub muted" id="rec-sub">Используется микрофон этого устройства</div>
-        <div class="meter" id="meter" hidden><div id="meter-bar"></div></div>
-      </div>
-      <div class="rec-actions" id="rec-actions" hidden>
-        <button class="btn primary" id="btn-stop" type="button">Остановить и проанализировать</button>
-        <button class="btn ghost" id="btn-cancel" type="button">Отменить</button>
-      </div>
-    </div>
-
-    <div class="or"><span>или</span></div>
-
-    <label class="drop" id="drop">
-      <input type="file" id="file-input" accept="audio/*,video/*,.m4a,.mp3,.wav,.ogg,.webm" multiple hidden>
-      <strong>Перетащите аудиофайлы сюда</strong>
-      <span class="muted">или нажмите, чтобы выбрать. Можно несколько файлов.</span>
-    </label>
-    <ul class="file-list" id="file-list"></ul>
-    <fieldset class="mode" id="mode" hidden>
-      <label><input type="radio" name="mode" value="separate" checked> Отдельные встречи — каждый файл анализируется сам по себе</label>
-      <label><input type="radio" name="mode" value="joined"> Части одной встречи — склеить по порядку имён</label>
-    </fieldset>
-
-    <details class="meta">
-      <summary>Данные встречи <span class="muted">— необязательно, улучшают точность анализа</span></summary>
-      <div class="grid">
-        <label>Менеджер<input name="manager_name" placeholder="Имя менеджера"></label>
-        <label>ID менеджера<input name="manager_id"></label>
-        <label>Дата встречи<input name="meeting_date" type="date"></label>
-        <label>ID встречи / сделки<input name="meeting_id"></label>
-      </div>
-      <label>Коммерческие условия компании
-        <textarea name="company_rules" rows="2" placeholder="Действующие акции, скидки по распродаже, условия рассрочки, возврат предоплаты"></textarea></label>
-      <label>Данные о сделке из CRM<textarea name="crm_data" rows="2"></textarea></label>
-      <label>История предыдущих контактов<textarea name="client_history" rows="2"></textarea></label>
-      <label>Сведения о продукции и технических требованиях<textarea name="product_knowledge" rows="2"></textarea></label>
-    </details>
-
-    <button class="btn primary wide" id="btn-upload" type="button" disabled>Анализировать файлы</button>
-    <div class="error" id="new-error" hidden></div>
-  </section>
-
-  <!-- Результат -->
-  <section class="card" id="view-job" hidden>
-    <div class="job-head">
-      <div>
-        <a href="#" class="back">← Новая встреча</a>
-        <h1 id="job-title">Встреча</h1>
-        <div class="muted" id="job-sub"></div>
-      </div>
-      <div class="score" id="score" hidden><span id="score-val">—</span><small>/100</small></div>
-    </div>
-
-    <ol class="steps" id="steps">
-      <li data-s="upload">Загрузка</li>
-      <li data-s="transcribing">Расшифровка</li>
-      <li data-s="analyzing">Анализ</li>
-      <li data-s="done">Готово</li>
-    </ol>
-    <div class="detail muted" id="job-detail"></div>
-    <div class="error" id="job-error" hidden></div>
-    <div class="warn" id="job-warn" hidden></div>
-
-    <div class="metrics" id="metrics" hidden>
-      <h2>Метрики разговора <span class="muted">— посчитаны по таймкодам, без ИИ</span></h2>
-      <table><thead><tr><th>Спикер</th><th>Доля речи</th><th>Реплик</th><th>Вопросов</th><th>Самый длинный монолог</th></tr></thead>
-        <tbody id="metrics-body"></tbody></table>
-    </div>
-
-    <div class="tabs" id="tabs" hidden>
-      <button class="tab active" data-tab="report" type="button">Отчёт</button>
-      <button class="tab" data-tab="texts" type="button">Готовые тексты</button>
-      <button class="tab" data-tab="transcript" type="button">Расшифровка</button>
-      <div class="tab-actions">
-        <a class="btn ghost small" id="dl-report">Скачать .md</a>
-        <a class="btn ghost small" id="dl-transcript">Расшифровка .txt</a>
-        <button class="btn ghost small" id="btn-reanalyze" type="button">Повторить анализ</button>
-      </div>
-    </div>
-    <article class="pane report" id="pane-report"></article>
-    <div class="pane texts" id="pane-texts" hidden>
-      <p class="muted">Тексты из отчёта, очищенные от следов генерации: можно копировать и отправлять без правки.</p>
-      <section class="text-block">
-        <div class="text-head"><h3>Сообщение клиенту</h3><button class="btn primary small" data-copy="client_message" type="button">Скопировать</button></div>
-        <div class="text-body" data-text="client_message"></div>
-      </section>
-      <section class="text-block">
-        <div class="text-head"><h3>Скрипт следующего звонка</h3><button class="btn ghost small" data-copy="call_script" type="button">Скопировать</button></div>
-        <div class="text-body" data-text="call_script"></div>
-      </section>
-      <section class="text-block">
-        <div class="text-head"><h3>Резюме для CRM</h3><button class="btn ghost small" data-copy="crm_summary" type="button">Скопировать</button></div>
-        <div class="text-body" data-text="crm_summary"></div>
-      </section>
-    </div>
-    <div class="pane transcript" id="pane-transcript" hidden></div>
-
-    <div class="player" id="player" hidden>
-      <button class="play" id="btn-play" type="button" aria-label="Воспроизвести">▶</button>
-      <div class="player-main">
-        <input type="range" id="seek" min="0" max="100" step="0.1" value="0" aria-label="Позиция">
-        <div class="player-meta"><span id="time">00:00</span><span class="muted" id="now-speaker"></span><span class="muted" id="dur"></span></div>
-      </div>
-      <button class="btn ghost small" id="btn-rate" type="button">1×</button>
-      <audio id="audio" preload="metadata"></audio>
-    </div>
-  </section>
-
-  <aside class="card history">
-    <h2>История</h2>
-    <ul id="history"><li class="muted">Пока пусто</li></ul>
+<div class="shell">
+  <!-- Боковое меню -->
+  <aside class="side">
+    <a class="logo" href="#"><span class="logo-mark">Ai</span>Аудитор встреч</a>
+    <nav>
+      <div class="nav-label">Меню</div>
+      <a class="nav-item" id="nav-new" href="#"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Новая встреча</a>
+      <div class="nav-label">Встречи</div>
+      <ul class="history" id="history"><li class="empty">Пока пусто</li></ul>
+    </nav>
+    <div class="services" id="cfg"></div>
   </aside>
-</main>
 
-<script src="/static/app.js?v=4"></script>
+  <main class="main">
+    <!-- Новая встреча -->
+    <section id="view-new">
+      <header class="page-head">
+        <div>
+          <h1>Новая встреча</h1>
+          <p class="sub">Запишите разговор или загрузите запись. После остановки запись расшифруется, а ИИ разберёт встречу по регламенту отдела продаж.</p>
+        </div>
+      </header>
+
+      <div class="new-grid">
+        <div class="panel record-panel" id="recorder">
+          <button class="rec-btn" id="btn-rec" type="button" aria-label="Начать запись"><span class="rec-dot"></span></button>
+          <div class="rec-title" id="rec-title">Начать запись</div>
+          <div class="sub" id="rec-sub">Используется микрофон этого устройства</div>
+          <div class="meter" id="meter" hidden><div id="meter-bar"></div></div>
+          <div class="rec-actions" id="rec-actions" hidden>
+            <button class="btn primary" id="btn-stop" type="button">Остановить и проанализировать</button>
+            <button class="btn ghost" id="btn-cancel" type="button">Отменить</button>
+          </div>
+        </div>
+
+        <div class="panel upload-panel">
+          <label class="drop" id="drop">
+            <input type="file" id="file-input" accept="audio/*,video/*,.m4a,.mp3,.wav,.ogg,.webm" multiple hidden>
+            <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+            <strong>Перетащите аудиофайлы</strong>
+            <span class="sub">или нажмите, чтобы выбрать. Можно несколько.</span>
+          </label>
+          <ul class="file-list" id="file-list"></ul>
+          <fieldset class="mode" id="mode" hidden>
+            <label><input type="radio" name="mode" value="separate" checked> Отдельные встречи</label>
+            <label><input type="radio" name="mode" value="joined"> Части одной встречи</label>
+          </fieldset>
+          <button class="btn primary wide" id="btn-upload" type="button" disabled>Анализировать файл</button>
+        </div>
+      </div>
+
+      <details class="panel meta">
+        <summary>Данные встречи <span class="sub">необязательно, повышают точность анализа</span></summary>
+        <div class="grid2">
+          <label>Менеджер<input name="manager_name" placeholder="Имя менеджера"></label>
+          <label>ID менеджера<input name="manager_id"></label>
+          <label>Дата встречи<input name="meeting_date" type="date"></label>
+          <label>ID встречи или сделки<input name="meeting_id"></label>
+        </div>
+        <label>Коммерческие условия компании
+          <textarea name="company_rules" rows="2" placeholder="Действующие акции, скидки по распродаже, условия рассрочки, возврат предоплаты"></textarea></label>
+        <label>Данные о сделке из CRM<textarea name="crm_data" rows="2"></textarea></label>
+        <label>История предыдущих контактов<textarea name="client_history" rows="2"></textarea></label>
+        <label>Сведения о продукции и технических требованиях<textarea name="product_knowledge" rows="2"></textarea></label>
+      </details>
+      <div class="alert error" id="new-error" hidden></div>
+    </section>
+
+    <!-- Встреча -->
+    <section id="view-job" hidden>
+      <header class="page-head">
+        <div>
+          <h1 id="job-title">Встреча</h1>
+          <p class="sub" id="job-sub"></p>
+        </div>
+        <div class="head-actions">
+          <a class="btn ghost small" id="dl-report">Отчёт .md</a>
+          <a class="btn ghost small" id="dl-transcript">Расшифровка .txt</a>
+          <button class="btn ghost small" id="btn-reanalyze" type="button">Повторить анализ</button>
+        </div>
+      </header>
+
+      <ol class="steps" id="steps">
+        <li data-s="upload">Загрузка</li><li data-s="transcribing">Расшифровка</li>
+        <li data-s="analyzing">Анализ</li><li data-s="done">Готово</li>
+      </ol>
+      <div class="detail sub" id="job-detail"></div>
+      <div class="alert error" id="job-error" hidden></div>
+      <div class="alert warn" id="job-warn" hidden></div>
+
+      <!-- Сводка: балл, плитки, этапы, инсайты -->
+      <div class="overview" id="overview" hidden>
+        <div class="panel score-card">
+          <div class="ring" id="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-val" id="ring-val" cx="60" cy="60" r="52"/></svg>
+            <div class="ring-text"><span class="ring-label">Оценка</span><strong id="score-val">—</strong><span class="ring-of">из 100</span></div>
+          </div>
+          <div class="score-level" id="score-level"></div>
+        </div>
+        <div class="tiles">
+          <div class="tile t-peach"><span class="tile-label">Стадия клиента</span><strong id="tile-stage">—</strong><span class="tile-sub" id="tile-stage-sub"></span></div>
+          <div class="tile t-lav"><span class="tile-label">Вероятность покупки</span><strong id="tile-prob">—</strong><span class="tile-sub" id="tile-prob-sub"></span></div>
+          <div class="tile t-grey"><span class="tile-label">Менеджер говорит</span><strong id="tile-talk">—</strong><span class="tile-sub" id="tile-talk-sub"></span></div>
+        </div>
+        <div class="panel stages-card">
+          <div class="card-head"><h2>Этапы встречи</h2><span class="sub">% от максимума по регламенту</span></div>
+          <div class="bars" id="bars"></div>
+        </div>
+        <div class="panel insights-card">
+          <div class="card-head"><h2>ИИ-инсайты</h2></div>
+          <div id="insights"></div>
+        </div>
+      </div>
+
+      <!-- Плеер -->
+      <div class="panel player" id="player" hidden>
+        <div class="player-top">
+          <span class="player-title">Запись встречи</span>
+          <div class="controls">
+            <button class="ctl play" id="btn-play" type="button" aria-label="Воспроизвести"><svg viewBox="0 0 24 24" id="play-icon"><path d="M8 5v14l11-7z"/></svg></button>
+            <button class="ctl" id="btn-back" type="button" aria-label="Назад 15 секунд"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/><text x="12" y="15.5" text-anchor="middle">15</text></svg></button>
+            <button class="ctl" id="btn-fwd" type="button" aria-label="Вперёд 15 секунд"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/><text x="12" y="15.5" text-anchor="middle">15</text></svg></button>
+            <button class="ctl rate" id="btn-rate" type="button">1×</button>
+            <span class="clock"><b id="time">0:00</b> / <span id="dur">0:00</span></span>
+          </div>
+          <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input id="search" type="search" placeholder="Поиск по разговору"><span class="search-count" id="search-count"></span></label>
+        </div>
+        <div class="timeline" id="timeline">
+          <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+          <div id="tracks"></div>
+          <div class="cursor" id="cursor"><span class="cursor-time" id="cursor-time">0:00</span></div>
+        </div>
+        <audio id="audio" preload="metadata"></audio>
+      </div>
+
+      <div class="tabs" id="tabs" hidden>
+        <button class="tab active" data-tab="report" type="button">Отчёт</button>
+        <button class="tab" data-tab="texts" type="button">Готовые тексты</button>
+        <button class="tab" data-tab="transcript" type="button">Расшифровка</button>
+      </div>
+      <article class="panel pane report" id="pane-report"></article>
+      <div class="pane texts" id="pane-texts" hidden>
+        <p class="sub">Тексты из отчёта после редактуры: можно копировать и отправлять без правки.</p>
+        <section class="panel text-block">
+          <div class="text-head"><h3>Сообщение клиенту</h3><button class="btn primary small" data-copy="client_message" type="button">Скопировать</button></div>
+          <div class="text-body" data-text="client_message"></div>
+        </section>
+        <section class="panel text-block">
+          <div class="text-head"><h3>Скрипт следующего звонка</h3><button class="btn ghost small" data-copy="call_script" type="button">Скопировать</button></div>
+          <div class="text-body" data-text="call_script"></div>
+        </section>
+        <section class="panel text-block">
+          <div class="text-head"><h3>Резюме для CRM</h3><button class="btn ghost small" data-copy="crm_summary" type="button">Скопировать</button></div>
+          <div class="text-body" data-text="crm_summary"></div>
+        </section>
+      </div>
+      <div class="pane transcript" id="pane-transcript" hidden></div>
+    </section>
+  </main>
+</div>
+<script src="/static/app.js?v=7"></script>
 </body>
 </html>

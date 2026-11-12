@@ -3,7 +3,6 @@ import base64
 import re
 import secrets
 import shutil
-from dataclasses import asdict
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
@@ -44,7 +43,8 @@ def _safe_name(name: str) -> str:
 
 @app.get("/")
 def index():
-    return FileResponse(config.STATIC_DIR / "index.html")
+    # Страница всегда свежая: версии CSS/JS указаны в ней, старая копия из кэша подтянула бы старый интерфейс
+    return FileResponse(config.STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/config")
@@ -89,7 +89,7 @@ def list_jobs():
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str):
-    return asdict(_job_or_404(job_id))
+    return _job_or_404(job_id).view()
 
 
 @app.post("/api/jobs/{job_id}/reanalyze")

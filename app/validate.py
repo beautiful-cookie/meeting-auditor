@@ -6,6 +6,8 @@
 import re
 
 STAGE_MAX = {1: 8, 2: 20, 3: 5, 4: 15, 5: 10, 6: 10, 7: 15, 8: 10, 9: 7}
+STAGE_TITLES = {1: "Контакт", 2: "Потребности", 3: "Сравнение", 4: "Презентация", 5: "Эмоции",
+                6: "Цена", 7: "Закрытие", 8: "Возражения", 9: "Следующий шаг"}  # короткие — подписи под столбиками
 NUM = r"(\d+(?:[.,]\d+)?)"
 
 
@@ -20,9 +22,35 @@ def _num(s: str) -> float:
     return float(s.replace(",", "."))
 
 
+def stage_table(report: str) -> list[dict]:
+    """Баллы по девяти этапам из таблицы оценки: [{stage, title, got, max, comment}]; got=None — Н/П или нет данных."""
+    found: dict[int, dict] = {}
+    for line in report.splitlines():
+        cells = [c.strip(" *") for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        m = re.match(r"^(\d)\b\.?\s*(.*)$", cells[0])
+        if not m or int(m.group(1)) not in STAGE_MAX or int(m.group(1)) in found:
+            continue
+        stage = int(m.group(1))
+        rest = cells[1:]
+        if not m.group(2).strip() and rest and not re.fullmatch(NUM, rest[0]):
+            rest = rest[1:]  # таблица вида «| 1 | Приветствие | 6 | 8 |»
+        nums = [c for c in rest[:3] if re.fullmatch(NUM, c)]
+        texts = [c for c in rest if c and not re.fullmatch(NUM, c)]
+        found[stage] = {"stage": stage, "title": STAGE_TITLES[stage], "max": STAGE_MAX[stage],
+                        "got": _num(nums[0]) if nums else None,
+                        "comment": texts[0][:200] if texts else ""}
+    return [found[s] for s in sorted(found)]
+
+
+def total_score(report: str) -> float | None:
+    m = re.search(r"Итог[^0-9\n]{0,25}" + NUM + r"\s*/\s*100", report)
+    return _num(m.group(1)) if m else None
+
+
 def check(report: str, transcript: str = "") -> list[str]:
     issues: list[str] = []
-    scores: dict[int, float] = {}
 
     # Имя менеджера в карточке встречи, которого нет в записи, — выдумка модели
     m = re.search(r"Менеджер\W{0,6}\s*([А-ЯЁ][а-яё]{2,})", report)
@@ -30,19 +58,8 @@ def check(report: str, transcript: str = "") -> list[str]:
         if not name_heard(m.group(1), transcript):
             issues.append(f"В карточке встречи менеджер назван «{m.group(1)}», но этого имени нет в записи.")
 
-    for line in report.splitlines():
-        cells = [c.strip(" *") for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3:
-            continue
-        m = re.match(r"^(\d)\b", cells[0])
-        if not m or int(m.group(1)) not in STAGE_MAX or int(m.group(1)) in scores:
-            continue
-        stage = int(m.group(1))
-        nums = [c for c in cells[1:4] if re.fullmatch(NUM, c)]
-        if not nums:
-            continue  # «Н/П» или «Нет данных»
-        got = _num(nums[0])
-        scores[stage] = got
+    scores = {s["stage"]: s["got"] for s in stage_table(report) if s["got"] is not None}
+    for stage, got in scores.items():
         if got > STAGE_MAX[stage]:
             issues.append(f"Этап {stage}: {got:g} баллов при максимуме {STAGE_MAX[stage]} — ошибка модели.")
 
